@@ -3,3 +3,4 @@
 *.xls
 .idea/
 gym_custom/gym_custom.egg-info/*
+checkpoints/*
