@@ -1,3 +1,5 @@
 .ipynb_checkpoints/
 *.csv
 *.xls
+.idea/
+gym_custom/gym_custom.egg-info/*
