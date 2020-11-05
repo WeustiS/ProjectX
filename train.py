@@ -54,9 +54,9 @@ if __name__ == '__main__':
     # Stable Baselines provides you with make_vec_env() helper
     # which do es exactly the previous steps for you:
     # env = make_vec_env(env_id, n_envs=num_cpu, seed=0)
-    chkpt = CheckpointCallback(save_freq=500, save_path="./checkpoints", name_prefix="MLPLNLSTM_chkpt_")
-    if False :
-        model = A2C.load("MLPLNLSTM")  # PPO2(MlpLstmPolicy, env, verbose=1, nminibatches=1)
+    chkpt = CheckpointCallback(save_freq=500, save_path="./checkpoints", name_prefix="MLPLNLSTM_chkpt_v2_")
+    if False: # for evaluation
+        model = DQN.load("checkpoints/MLPLNLSTM_chkpt__1000_steps.zip")  # PPO2(MlpLstmPolicy, env, verbose=1, nminibatches=1)
         obs = env.reset()
         while True:
             for i in range(288):
@@ -64,11 +64,10 @@ if __name__ == '__main__':
                 obs, rewards, dones, info = env.step(action)
             obs = env.reset()
     model = DQN(LnMlpPolicy, env, verbose=1,
-                gamma=0.996,  # higher weight on future planning
-                exploration_fraction=.2,  # increase exploration time
+                gamma=0.996  # higher weight on future planning
                 )
     for episode in range(10000):
-        model.learn(total_timesteps=288, callback=chkpt)
+        model.learn(total_timesteps=500, callback=chkpt)
         #obs = env.reset()
     model.save("DQN_LNMLP")
     env.close()
