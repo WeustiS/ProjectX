@@ -31,10 +31,11 @@ class FooEnv(gym.Env):
 
     def __init__(self, data=None):
         if data is None:
-            data = pd.read_csv(r'E:\Projects\ProjectX\cleaned_data2020_v2.csv')
+               data = np.load(r'E:\Projects\ProjectX\superclean.npy') #pd.read_csv(r'E:\Projects\ProjectX\cleaned_data2020_v2.csv')
         super(FooEnv, self).__init__()
         self.seed()
 
+        self.d = 0
         self.data = data
 
         self.battery_capacity = np.random.uniform(10, 10 * 100)  # kWh
@@ -143,6 +144,10 @@ class FooEnv(gym.Env):
         self.solar_hist = []
 
         self.dummy_hist = []
+
+        self.reward = 0
+
+
         const_params = True
         if const_params:
             self.battery_capacity = 14*3 # 3 tesla powerwalls
@@ -150,15 +155,18 @@ class FooEnv(gym.Env):
             self.solar_sqft = 1500
             self.solar_rate = lambda i: self.solar_sqft * 15 / 1000 * self.solar.solar_output(i/12) * np.random.normal(1, .05)
             self.consumption_LUT = self.consumption_LUT_base
-                             # profit, price, capacity, charge, brate,  solar rate, i
-            self.low = np.array([-100]*288 + [-100000, -200,   14*3-1,   0,     14.99,       0,    0], dtype=np.float32)
-            self.high = np.array([200]*288 +[100000, 200, 14*3+1,   14*3,  15.01, 1500*15/1000,   289], dtype=np.float32)
+                             # profit, price, rolling average, last_hour_average, charge_prop,  solar rate, i
+            self.low = np.array([-100]*288 + [-10000, -20, -20, -20,      0,           0,    0], dtype=np.float32)
+            self.high = np.array([200]*288 + [10000, 80, 80, 80,   1,  1500*15/1000,   289], dtype=np.float32)
             self.observation_space = spaces.Box(self.low, self.high, dtype=np.int32)
 
 
     def step(self, action):
         # Execute one time step within the environment
-        total_profit, price, capacity, charge, battery_rate, curr_solar_rate, i = self.state[-7:]
+        # profit, price, rolling average, last_hour_average, charge_prop,  solar rate, i
+        total_profit, price, rolling_average, last_hour_average, charge_prop, curr_solar_rate, i = self.state[-7:]
+        capacity = self.battery_capacity
+        charge = charge_prop * self.battery_capacity
         past_price_data = self.state[:-7]
         # calculate profit
         # get new price
@@ -167,8 +175,7 @@ class FooEnv(gym.Env):
 
         delta_t = 5 / 60  # in units hours
 
-        profit = 0
-        new_charge = charge
+        new_charge = 0
 
         self.charge_hist.append(charge)
         self.price_hist.append(price)
@@ -200,7 +207,7 @@ class FooEnv(gym.Env):
         if action == 0:  # discharge
             if charge == 0:
                 lost_energy_penalty += 1
-            new_charge = max(0, charge - battery_rate * delta_t) # can't undercharge
+            new_charge = max(0, charge - self.battery_rate * delta_t) # can't undercharge
             discharge = charge - new_charge # add solar panel
             price_energy = discharge*price/1000
             surplus_energy += curr_solar_rate * delta_t + discharge
@@ -213,12 +220,13 @@ class FooEnv(gym.Env):
         elif action == 2:  # charge
             if charge == self.battery_capacity:
                 lost_energy_penalty += 1
-            solar_charge_rate = min(curr_solar_rate,  battery_rate)
 
-            grid_charge_rate = battery_rate-solar_charge_rate
+            solar_charge_rate = min(curr_solar_rate,  self.battery_rate)
+
+            grid_charge_rate = self.battery_rate-solar_charge_rate
             surplus_energy -= grid_charge_rate * delta_t
 
-            new_charge = min(self.battery_capacity, charge + battery_rate * delta_t)
+            new_charge = min(self.battery_capacity, charge + self.battery_rate * delta_t)
 
             extra_discharge_rate = max(0, curr_solar_rate - solar_charge_rate)  # find extra energy
             surplus_energy += extra_discharge_rate * delta_t
@@ -226,18 +234,17 @@ class FooEnv(gym.Env):
             price_energy = (charge-new_charge) * price / 1000
 
 
+
         else:
             print("ACTION IS UNKNOWN, EXPECTED INT IN RANGE [0,2] FOUND ", action)
-        self.dummy_hist.append(surplus_energy)
+        #self.dummy_hist.append(surplus_energy)
         profit = surplus_energy * price / 1000  # price is in $/MWh, discharge is in kWh
 
         # set up next state
-        new_price = self.day_data[i]
-        total_profit += profit
-        self.profit_hist.append(profit)
-        past_price_data[int(i)] = new_price
 
-        self.state = past_price_data + [total_profit, new_price, capacity, new_charge, battery_rate, self.solar_rate(i+1), i + 1]
+
+        # profit, price, rolling average, last_hour_average, charge_prop,  solar rate, i
+
 
         # for debugging
         self.last_action = "Error"
@@ -258,9 +265,11 @@ class FooEnv(gym.Env):
         if len(self.action_hist) < 6:
             action_changes = 0
         else:
-            action_changes = sum([1 if bool(self.action_hist[-6+i] is not self.action_hist[-5+i]) else 0 for i in range(6)])
+            action_changes = sum([1 if bool(np.abs(self.action_hist[-6+i] - self.action_hist[-5+i]) > 1) else 0 for i in range(6)])
             if action_changes < 2:
                 action_changes = 0
+            else:
+                action_changes = np.log10(action_changes)/15
         action_penalty = action_changes
 
         # capacity penalty
@@ -273,44 +282,86 @@ class FooEnv(gym.Env):
 
         #print(action, price_energy)
         self.price_energy_cumulative += price_energy
-        reward = self.price_energy_cumulative
+        self.reward += price_energy
+        self.reward += total_profit/2000
+        self.dummy_hist.append(self.price_energy_cumulative)
+       # self.reward -= action_penalty*delta_t/50
        # reward += action_penalty*profit*.1*-1
        # reward += capacity_penalty*profit*.1*-1
-       # reward += lost_energy_penalty*profit*1*-1
+        self.reward -= lost_energy_penalty*delta_t/100
        # print(total_profit, profit, action_penalty, capacity_penalty, lost_energy_penalty)
        # print(total_profit, profit,  action_penalty, capacity_penalty, lost_energy_penalty)
-        self.reward_hist.append(reward)
+        #rint(self.battery_charge, self.battery_capacity, curr_solar_rate)
+        self.reward += charge_prop*delta_t/75
+        self.reward += new_charge/self.battery_capacity*curr_solar_rate*delta_t/75
+        self.reward_hist.append(self.reward)
 
         if done:
-            self.render()
+            average_last_price = sum(sorted(self.price_hist[:-5])[1:4])/3
+            average_last_price *= .8 # punish it a little
+            self.reward += new_charge*average_last_price/1000 #discharge the rest of the battery when the day ends at curr price
+            total_profit += new_charge*average_last_price/1000
+            new_charge = 0
+            # profit, price, rolling average, last_hour_average, charge_prop,  solar rate, i
+            self.state = past_price_data + [total_profit, price, rolling_average, last_hour_average, 0.0,
+                                            self.solar_rate(i), i]
 
-        return np.array(self.state), reward, done, {}
+            self.battery_charge = 0
+            self.reward_hist[-1] = self.reward
+            self.render()
+        else:
+            new_price = self.day_data[i + 1]
+            total_profit += profit
+            self.profit_hist.append(profit)
+            past_price_data[int(i + 1)] = new_price
+
+            rolling_average = np.mean(self.day_data[:i + 1] / (i + 1))
+            if i >= 11:
+                last_hour_average = np.mean(self.day_data[-11 + i: i + 1])
+            else:
+                last_hour_average = rolling_average
+
+            charge_prop = new_charge / self.battery_capacity
+            self.state = past_price_data + [total_profit, new_price, rolling_average, last_hour_average, charge_prop,
+                                            self.solar_rate(i + 1), i + 1]
+
+        return np.array(self.state), self.reward, done, {'p': total_profit, 's': sum(self.default_solar_hist), 'd': sum(self.default_hist)}
 
     def reset(self):
         # Reset the state of the environment to an initial state
 
-        nodes = pd.unique(self.data['Node'])
-        node = np.random.choice(nodes)
+        if type(self.data) == type(pd.DataFrame):
+            nodes = pd.unique(self.data['Node']) # SILVERDO_1_N002, 2020-02-06
+            node = np.random.choice(nodes)
 
-        days = pd.unique(self.data[self.data['Node'] == node]['Date'])
-        day = np.random.choice(days)
+            days = pd.unique(self.data[self.data['Node'] == node]['Date'])
+            day = np.random.choice(days)
 
-        self.node = node
-        self.day = day
-        #print(f"Resetting env to {node} on {day}")
+            self.node = node
+            self.day = day
+            #print(f"Resetting env to {node} on {day}")
+            self.reward = 0
+            query_df = self.data[(self.data["Date"]==day) & (self.data["Node"] == node)]
 
-        query_df = self.data[(self.data["Date"]==day) & (self.data["Node"] == node)]
-        self.day_data = query_df.reset_index()['Value']
-        #print(query_df.reset_index()["Interval Number"])
-        start_interval = query_df.reset_index()["Interval Number"][0]
+
+
+            self.day_data = query_df.reset_index()['Value']
+            #print(query_df.reset_index()["Interval Number"])
+            start_interval = query_df.reset_index()["Interval Number"][0]
+        elif type(self.data) == type(np.ndarray((1,1))):
+            self.node = "NPY"
+            self.day = int(self.d) #np.random.choice(range(len(self.data)))
+            self.reward = 0
+            self.day_data = self.data[self.day]
+            start_interval = 0
         tmp = {}
         for k, v in self.consumption_LUT_base.items():
             tmp[k] = v + np.random.normal(0, .2)
         self.consumption_LUT = tmp
         past_price_data = [0] * 288
-
-        self.state = past_price_data + [0, self.day_data[0], self.battery_capacity, .001, self.battery_rate, self.solar_rate(start_interval),
-                      start_interval]
+        # profit, price, rolling average, last_hour_average, charge_prop,  solar rate, i
+        self.state = past_price_data + [0, self.day_data[0], self.day_data[0], self.day_data[0], 0,
+                                        self.solar_rate(start_interval), start_interval]
         self.charge_hist = []
         self.price_hist = []
         self.action_hist = []
@@ -322,15 +373,17 @@ class FooEnv(gym.Env):
         self.dummy_hist = []
         self.price_energy_cumulative = 0
 
+        self.d += .5
         return self.state
 
     def render(self, mode='human', close=False):
         # Render the environment
-        total_profit, price, capacity, charge, battery_rate, solar_rate, i = self.state[-7:]
+        # profit, price, rolling average, last_hour_average, charge_prop,  solar rate, i
+        total_profit, price, rolling_average, last_hour_average, charge_prop, solar_rate, i = self.state[-7:]
         default_cost = sum(self.default_hist)
         default_solar_cost = sum(self.default_solar_hist)
         #print(f"{capacity}kWh battery is at {charge / capacity}% after {self.last_action}")
-        print(f"Completed: {self.node}, {self.day} || {total_profit-default_solar_cost} diff || {self.price_energy_cumulative} Reward || Profit: ${total_profit} || Solar: ${ default_solar_cost} || Default: ${default_cost}")
+        print(f"Completed: {self.node}, {self.day} || {total_profit-default_solar_cost} diff || {self.reward_hist[-1]} Reward || Profit: ${total_profit} || Solar: ${ default_solar_cost} || Default: ${default_cost}")
         #print(f"Battery charge rate is {battery_rate} and current solar output is {solar_rate}")
         if (os.path.exists('stop.txt') or os.path.exists('print.txt')): # my way of asyncronously stopping :)
             #smoothed_action_hist = [sum(self.action_hist[i:i+14])/(14*3) - 2 for i in range(len(self.action_hist)-14)]
@@ -339,19 +392,19 @@ class FooEnv(gym.Env):
             #idle = np.ma.masked_where(self.action_hist == 1, self.action_hist)-3
             #charge = np.ma.masked_where(self.action_hist == 2, self.action_hist)-3
             #dotted_capacity_line = [capacity/max(self.charge_hist)+.00001]*20
-            plt.plot(range(len(self.charge_hist)), np.array(self.charge_hist)/(max(self.charge_hist)+.00001), label="BCharge")
+            plt.plot(range(len(self.charge_hist)), np.array(self.charge_hist)/(self.battery_capacity), label="BCharge")
             #plt.plot(range(len(dotted_capacity_line)), dotted_capacity_line, label = "BCap")
             plt.plot(range(len(self.charge_hist)), np.array(self.price_hist)/(sum(self.price_hist)/len(self.price_hist)), label="Price")
             plt.plot(range(len(self.action_hist)), [x/3-3 for x in self.action_hist], label="Action")
-            plt.plot(range(len(self.profit_hist)), self.profit_hist, label="ProfitDelta")
-            plt.plot(range(len(self.reward_hist)), [x for x in self.reward_hist], label="Reward")
+            #plt.plot(range(len(self.profit_hist)), self.profit_hist, label="ProfitDelta")
+            plt.plot(range(len(self.reward_hist)), [x/max(np.abs(min(self.reward_hist)), max(self.reward_hist)) for x in self.reward_hist], label="Reward")
             #plt.plot(range(len(self.solar_hist)), self.solar_hist, label="Solar Output")
-            #plt.plot(range(len(self.dummy_hist)), self.dummy_hist, label="Dummy")
+            plt.plot(range(len(self.dummy_hist)), [x-2 for x in self.dummy_hist], label="BatteryProfit")
             plt.legend()
             if os.path.exists('stop.txt'):
                 plt.show()
             elif os.path.exists('print.txt'):
-                plt.savefig(f"figure.png")
+                plt.savefig(f"figure_alt_2.png")
             plt.clf()
 
 
