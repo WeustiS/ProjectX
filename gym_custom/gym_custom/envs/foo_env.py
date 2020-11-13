@@ -116,6 +116,8 @@ class FooEnv(gym.Env):
         for k,v in self.consumption_LUT_base.items():
             self.consumption_LUT_base[k] = v*28.9/total_energy_consumption
 
+        self.min_action = -1.0
+        self.max_action = 1.0
 
         self.consumption_LUT = {}
         for k,v in self.consumption_LUT_base.items():
