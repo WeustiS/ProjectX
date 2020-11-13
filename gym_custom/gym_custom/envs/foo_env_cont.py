@@ -155,7 +155,7 @@ class FooEnvCont(gym.Env):
 
             self.battery_charge = 0
             self.reward_hist[-1] = self.reward
-            self.render()
+            # self.render()
         else:
             new_price = self.day_data[i + 1]
 
