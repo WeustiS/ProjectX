@@ -12,9 +12,9 @@ from stable_baselines.common.noise import NormalActionNoise, OrnsteinUhlenbeckAc
 
 # from stable_baselines.deepq.policies import LnMlpPolicy
 from stable_baselines.common.vec_env import DummyVecEnv,SubprocVecEnv
-from stable_baselines.ddpg.policies import MlpPolicy, LnMlpPolicy
+from stable_baselines.td3.policies import MlpPolicy
 
-from stable_baselines import DQN, DDPG, HER
+from stable_baselines import DQN, DDPG, HER, TD3
 
 from stable_baselines.her import GoalSelectionStrategy, HERGoalEnvWrapper
 
@@ -71,7 +71,7 @@ if load_type == 'csv':
         print(len(data))
         data.to_csv('cleaned_data2020_v2.csv')
 elif load_type == 'npy':
-    data = np.load(r'E:\Projects\ProjectX\large_data_cleaned.npy')
+    data = np.load(r'large_data_cleaned.npy')
 
 
 def fixed_time(obs):
@@ -99,30 +99,28 @@ if __name__ == '__main__':
     env = DummyVecEnv([lambda: env])
 
 
-    chkpt = CheckpointCallback(save_freq=288*500, save_path="./checkpoints", name_prefix="DDPG_Large")
+    chkpt = CheckpointCallback(save_freq=288*500, save_path="./checkpoints", name_prefix="TD3_Large")
 
     n_actions = env.action_space.shape[-1]
     param_noise = None
-    action_noise = OrnsteinUhlenbeckActionNoise(mean=np.zeros(n_actions), sigma=float(0.5) * np.ones(n_actions))
+    action_noise = OrnsteinUhlenbeckActionNoise(mean=np.zeros(n_actions), sigma=float(0.2) * np.ones(n_actions))
 
-    model = DDPG(LnMlpPolicy, env,
+    model = TD3(MlpPolicy, env,
                  verbose=1,
-                 gamma=0.995,
-                 buffer_size=100000,
-                 param_noise=param_noise,
-                 action_noise= action_noise,
-                 enable_popart=True,
-    policy_kwargs={
-       'layers': [32, 32, 32, 32, 32, 32]
-    })# higher weight on future planning
-
+                 gamma=0.953,
+                 learning_rate=.00025,
+		 batch_size=32,
+		 buffer_size=1000000,
+		 train_freq=1000,
+                 action_noise= action_noise
+	)
     # model = DQN.load('checkpoints/DQN_LNLMLP_hist_PER_v1_cln_1296000_steps.zip', env=env)
-    model.learn(total_timesteps=int(700*300*30*3), callback=chkpt)
-    model.save("DDPG_Large")
+    model.learn(total_timesteps=int(276*7000*3), callback=chkpt)
+    model.save("TD3_Large_3")
 
     #del model # not needed, but good for saving / loading
-
-    model = DQN.load("DDPG_Large.zip")  # PPO2(MlpLstmPolicy, env, verbose=1, nminibatches=1)
+    exit(123)
+    model = DQN.load("TD3_Large.zip")  # PPO2(MlpLstmPolicy, env, verbose=1, nminibatches=1)
     obs = env.reset()
     p_dqn = []
     p_fixed = []

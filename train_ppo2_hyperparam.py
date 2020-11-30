@@ -30,7 +30,7 @@ data = np.load(r'large_data_cleaned.npy')
 np.random.seed(42)
 np.random.shuffle(data)
 
-separator = int(len(data)*.95)
+separator = int(len(data)*.90)
 
 train_data = data[:separator]
 test_data = data[separator:]
@@ -88,7 +88,7 @@ def sample_td3_params(trial):
     :param trial: (optuna.trial)
     :return: (dict)
     """
-    gamma = trial.suggest_categorical('gamma', [0.9, 0.95, 0.98, 0.99, 0.995, 0.999, 0.9999])
+    gamma = trial.suggest_loguniform('gamma', 0.94, 0.9999)
     learning_rate = trial.suggest_loguniform('lr', 1e-5, 1)
     batch_size = trial.suggest_categorical('batch_size', [16, 32, 64, 100, 128, 256, 512])
     buffer_size = trial.suggest_categorical('buffer_size', [int(1e4), int(1e5), int(1e6)])
@@ -127,7 +127,7 @@ class Objective(object):
         env_id = 'gym_custom:fooCont-v0'
         env = gym.make(env_id, data=self.train_data)
         env = DummyVecEnv([lambda: env])
-        algo = trial.suggest_categorical('algo', ['PPO2', 'DDPG', 'TD3'])
+        algo = trial.suggest_categorical('algo', ['TD3'])
         model = 0
         if algo == 'PPO2':
 
@@ -136,7 +136,7 @@ class Objective(object):
             model_params = optimize_ppo2(trial)
 
             model = PPO2(policy, env, verbose=0, nminibatches=1, **model_params)
-            model.learn(276*7000*3)
+            model.learn(276*7000)
 
         elif algo == 'DDPG':
             policy_choice = trial.suggest_categorical('policy', [False, True])
@@ -144,7 +144,7 @@ class Objective(object):
             model_params = sample_ddpg_params(trial)
 
             model= DDPG(policy, env, verbose=0, **model_params)
-            model.learn(276*7000*3)
+            model.learn(276*7000)
 
         elif algo == 'TD3':
             policy_choice = trial.suggest_categorical('policy', [False, True])
@@ -160,14 +160,14 @@ class Objective(object):
         env = DummyVecEnv([lambda: env])
 
         obs = env.reset()
-        for ep in range(150):
+        for ep in range(1000):
             for step in range(276):
                 action, _ = model.predict(obs)
                 obs, reward, done, _ = env.step(action)
                 reward_sum += reward
 
                 if done:
-                    rewards.append(reward_sum)
+                   rewards.append(reward_sum)
                     reward_sum = 0.0
                     obs = env.reset()
 
@@ -176,7 +176,7 @@ class Objective(object):
 
 if __name__ == '__main__':
     study = optuna.create_study()
-    study.optimize(Objective(train_data, test_data), n_trials=50)
+    study.optimize(Objective(train_data, test_data), n_trials=30)
     joblib.dump(study, 'study.pkl')
     print('Best trial until now:')
     print(' Value: ', study.best_trial.value)
