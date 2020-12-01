@@ -5,3 +5,18 @@ Renewable energy generation changes are unpredictable, and are dangerous to the 
 
 ## Data Acquisition
 We explore California's energy grid, as it is leading the shift to renewable energy generation. The ISO wholesale power market prices electricity based on the cost of generating and delivering it from particular grid locations called nodes. We collect the price of energy for 15 minute intervals for over 30 nodes in California. We also collected the wind and solar energy forecast, as well as the demand forecast. The data collected was for the years 2018, 2019, 2020. We use the California ISO Open Access Same-time Information System (OASIS) for the acquisition. We collect the data in the format of XMLs, from which we collect the relevant information to make dataframes. We queried data a day at a time, and ran loops over months and nodes/markets. You can click https://drive.google.com/drive/folders/1zJ1xFC4Szyo1l7OT112TMWbjWyfXlMlQ?usp=sharing to view all the collected data.
+
+
+## Folder Descriptions
+###DataAcquisition
+Scripts for pulling data from CAISO / OASIS. 
+###Images
+Images used in the document, as well as other assorted images for visualizations 
+###Models
+Saved models. Most up-to date model is TD3_Large_3
+###PreprocessedData
+Processed datasets in numpy format
+###Training
+RL training scripts
+###gym_custom
+Custom gym environment, utilize with pip install -e gym_custom
