@@ -8,15 +8,32 @@ We explore California's energy grid, as it is leading the shift to renewable ene
 
 
 ## Folder Descriptions
-###DataAcquisition
+
+### DataAcquisition
+
 Scripts for pulling data from CAISO / OASIS. 
-###Images
+
+
+### Images
+
 Images used in the document, as well as other assorted images for visualizations 
-###Models
+
+
+### Models
+
 Saved models. Most up-to date model is TD3_Large_3
-###PreprocessedData
+
+
+### PreprocessedData
+
 Processed datasets in numpy format
-###Training
+
+
+### Training
+
 RL training scripts
-###gym_custom
+
+
+### gym_custom
+
 Custom gym environment, utilize with pip install -e gym_custom
